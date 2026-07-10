@@ -305,6 +305,11 @@
       </div>
 
       <div class="section-title">내역</div>
+      <div class="month-nav" id="dayStepper" style="margin:6px 20px 10px;">
+        <button id="prevDay" aria-label="이전 날짜">‹</button>
+        <div class="label" id="dayStepperLabel">-</div>
+        <button id="nextDay" aria-label="다음 날짜">›</button>
+      </div>
       <div class="day-picker" id="dayPicker"></div>
       <div id="txContainer"></div>
     </div>
@@ -1094,6 +1099,9 @@ $('monthSubTabToggle').addEventListener('click',(e)=>{
 
 $('prevMonth').addEventListener('click',()=>{ currentMonth.setMonth(currentMonth.getMonth()-1); selectedDay = null; render(); });
 $('nextMonth').addEventListener('click',()=>{ currentMonth.setMonth(currentMonth.getMonth()+1); selectedDay = null; render(); });
+
+$('prevDay').addEventListener('click', ()=> stepDay(-1));
+$('nextDay').addEventListener('click', ()=> stepDay(1));
 $('prevYear').addEventListener('click',()=>{ currentYear--; render(); });
 $('nextYear').addEventListener('click',()=>{ currentYear++; render(); });
 
@@ -1327,6 +1335,22 @@ function ensureSelectedDay(mk, monthTx){
   }
 }
 
+function updateDayStepperLabel(){
+  const d = new Date(selectedDay+'T00:00:00');
+  const wd = ['일','월','화','수','목','금','토'][d.getDay()];
+  $('dayStepperLabel').textContent = (d.getMonth()+1)+'월 '+d.getDate()+'일 ('+wd+')';
+}
+
+function stepDay(delta){
+  const d = new Date(selectedDay+'T00:00:00');
+  d.setDate(d.getDate()+delta);
+  if(d.getFullYear()!==currentMonth.getFullYear() || d.getMonth()!==currentMonth.getMonth()){
+    currentMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+  }
+  selectedDay = d.toISOString().slice(0,10);
+  render();
+}
+
 function buildDayPicker(mk, monthTx){
   const wrap = $('dayPicker');
   const dim = daysInMonth(currentMonth);
@@ -1348,12 +1372,14 @@ function buildDayPicker(mk, monthTx){
   wrap.querySelectorAll('.day-chip').forEach(chip=>{
     chip.addEventListener('click', ()=>{
       selectedDay = chip.dataset.date;
+      updateDayStepperLabel();
       buildDayPicker(mk, monthTx);
       renderDayTx(transactions.filter(t=>t.date && t.date.slice(0,7)===mk));
     });
   });
   const activeChip = wrap.querySelector('.day-chip.active');
   if(activeChip) activeChip.scrollIntoView({ inline:'center', block:'nearest' });
+  updateDayStepperLabel();
 }
 
 function renderDayTx(monthTx){

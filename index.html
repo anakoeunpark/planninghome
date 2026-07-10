@@ -153,7 +153,7 @@
   .tx-list{margin:0 20px;display:flex;flex-direction:column;gap:2px;}
   .tx-date-group{margin-bottom:14px;}
   .tx-date-label{font-size:11.5px;color:var(--ink-soft);margin:0 4px 6px;letter-spacing:.02em;}
-  .tx{display:flex;align-items:center;gap:10px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:6px;}
+  .tx{display:flex;align-items:center;gap:10px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:6px;cursor:pointer;}
   .tx .tag{width:40px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;font-family:'Work Sans',sans-serif;letter-spacing:-0.02em;}
   .tx .tag.expense{background:var(--rust-tint);color:var(--rust-dark);}
   .tx .tag.income{background:var(--sage-tint);color:var(--sage-dark);}
@@ -265,6 +265,11 @@
             <label for="memoInput">메모</label>
             <input type="text" id="memoInput" placeholder="상세 내용">
           </div>
+        </div>
+
+        <div id="editBanner" style="display:none;margin-bottom:10px;justify-content:space-between;align-items:center;">
+          <span style="font-size:12.5px;color:var(--ink-soft);">내역을 수정하는 중이에요</span>
+          <button type="button" id="cancelEditBtn" class="edit-toggle">취소</button>
         </div>
 
         <button class="save-btn" id="saveBtn" data-type="expense">저장하기</button>
@@ -402,6 +407,7 @@ let selectedPayment = 'cash';
 let selectedCard = null;
 let isInstallment = false;
 let cardEditMode = false;
+let editingId = null;
 let yearStatFilter = 'expense';
 
 const $ = (id) => document.getElementById(id);
@@ -437,8 +443,21 @@ async function insertTx(entry){
   }catch(e){ toast('저장에 실패했어요. 다시 시도해 주세요.'); }
 }
 
+async function updateTx(entry){
+  try{
+    const { error } = await sb.from('transactions').update({
+      type:entry.type, date:entry.date, amount:entry.amount,
+      category:entry.category, who:entry.who, memo:entry.memo,
+      payment_method:entry.paymentMethod||null, card_name:entry.cardName||null,
+      installment: !!entry.installment, installment_months: entry.installmentMonths||null
+    }).eq('id', entry.id);
+    if(error) throw error;
+  }catch(e){ toast('수정에 실패했어요. 다시 시도해 주세요.'); }
+}
+
 async function deleteTx(id){
   transactions = transactions.filter(t=>t.id!==id);
+  if(editingId===id) cancelEdit();
   try{
     const { error } = await sb.from('transactions').delete().eq('id', id);
     if(error) throw error;
@@ -851,7 +870,7 @@ $('typeToggle').addEventListener('click',(e)=>{
   closeSubAdd();
   buildChips();
   $('saveBtn').dataset.type = selectedType;
-  $('saveBtn').textContent = selectedType==='expense' ? '지출 저장하기' : '수입 저장하기';
+  $('saveBtn').textContent = editingId ? '수정 저장' : (selectedType==='expense' ? '지출 저장하기' : '수입 저장하기');
   $('paymentSection').style.display = selectedType==='expense' ? '' : 'none';
 });
 
@@ -902,6 +921,70 @@ $('amountInput').addEventListener('input',(e)=>{
 
 $('dateInput').valueAsDate = new Date();
 
+function startEditTx(t){
+  editingId = t.id;
+
+  selectedType = t.type;
+  document.querySelectorAll('#typeToggle button').forEach(b=>b.classList.toggle('active', b.dataset.type===t.type));
+  $('paymentSection').style.display = t.type==='expense' ? '' : 'none';
+
+  selectedWho = t.who;
+  document.querySelectorAll('#whoToggle button').forEach(b=>b.classList.toggle('active', b.dataset.who===t.who));
+
+  $('amountInput').value = Number(t.amount).toLocaleString('ko-KR');
+
+  majorEditMode = false;
+  subEditMode = false;
+  $('majorEditToggle').textContent = '편집';
+  $('majorEditToggle').classList.remove('on');
+  $('subEditToggle').textContent = '편집';
+  $('subEditToggle').classList.remove('on');
+  selectedMajor = findMajorOf(t.type, t.category);
+  selectedCat = t.category;
+  buildChips();
+
+  $('dateInput').value = t.date;
+  $('memoInput').value = t.memo || '';
+
+  if(t.type==='expense'){
+    selectedPayment = t.paymentMethod || 'cash';
+    document.querySelectorAll('#paymentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.payment===selectedPayment));
+    $('cardSection').style.display = selectedPayment==='card' ? '' : 'none';
+    if(selectedPayment==='card'){
+      selectedCard = t.cardName || (CARDS[0] ? CARDS[0].name : null);
+      cardEditMode = false;
+      $('cardEditToggle').textContent = '편집';
+      $('cardEditToggle').classList.remove('on');
+      buildCardChips();
+      isInstallment = !!t.installment;
+      document.querySelectorAll('#installmentToggle button').forEach(b=>b.classList.toggle('active', (b.dataset.installment==='true')===isInstallment));
+      $('installmentMonthsRow').style.display = isInstallment ? '' : 'none';
+      $('installmentMonthsInput').value = t.installmentMonths || '';
+    }
+  }
+
+  $('saveBtn').textContent = '수정 저장';
+  $('editBanner').style.display = 'flex';
+  window.scrollTo({ top:0, behavior:'smooth' });
+}
+
+function cancelEdit(){
+  editingId = null;
+  $('editBanner').style.display = 'none';
+  $('amountInput').value = '';
+  $('memoInput').value = '';
+  $('installmentMonthsInput').value = '';
+  selectedPayment = 'cash';
+  isInstallment = false;
+  document.querySelectorAll('#paymentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.payment==='cash'));
+  document.querySelectorAll('#installmentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.installment==='false'));
+  $('cardSection').style.display = 'none';
+  $('installmentMonthsRow').style.display = 'none';
+  $('saveBtn').textContent = selectedType==='expense' ? '지출 저장하기' : '수입 저장하기';
+}
+
+$('cancelEditBtn').addEventListener('click', cancelEdit);
+
 $('saveBtn').addEventListener('click', async ()=>{
   const raw = $('amountInput').value.replace(/[^0-9]/g,'');
   const amount = Number(raw);
@@ -919,6 +1002,22 @@ $('saveBtn').addEventListener('click', async ()=>{
     if(!installmentMonthsVal || installmentMonthsVal < 2){ toast('할부 개월 수를 입력해 주세요 (2개월 이상)'); return; }
   }
   if(isExpense && selectedPayment==='card' && !cardName){ toast('카드를 선택해 주세요'); return; }
+
+  if(editingId){
+    const idx = transactions.findIndex(t=>t.id===editingId);
+    const entry = {
+      id: editingId,
+      type: selectedType, date, amount, category: selectedCat, who: selectedWho, memo,
+      paymentMethod, cardName, installment: installmentOn, installmentMonths: installmentMonthsVal,
+      createdAt: idx>-1 ? transactions[idx].createdAt : Date.now()
+    };
+    if(idx>-1) transactions[idx] = entry;
+    await updateTx(entry);
+    toast('수정했어요');
+    cancelEdit();
+    render();
+    return;
+  }
 
   const entry = {
     id: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
@@ -1199,7 +1298,7 @@ function renderMonth(){
       if(t.installment && t.installmentMonths) payBits.push('할부 '+t.installmentMonths+'개월');
       const payLine = payBits.length ? `<div class="memo">${payBits.join(' · ')}</div>` : '';
       return `
-      <div class="tx">
+      <div class="tx" data-edit-id="${t.id}">
         <div class="tag ${t.type}">${typeLabel}</div>
         <div class="mid">
           <div class="cat">${t.category}</div>
@@ -1217,7 +1316,13 @@ function renderMonth(){
   }).join('') + '</div>';
 
   container.querySelectorAll('.del').forEach(btn=>{
-    btn.addEventListener('click', ()=> deleteTx(btn.dataset.id));
+    btn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteTx(btn.dataset.id); });
+  });
+  container.querySelectorAll('.tx').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      const t = transactions.find(x=>x.id===row.dataset.editId);
+      if(t) startEditTx(t);
+    });
   });
 }
 

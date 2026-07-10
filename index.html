@@ -151,8 +151,23 @@
   .save-btn:active{transform:scale(0.98);}
 
   .tx-list{margin:0 20px;display:flex;flex-direction:column;gap:2px;}
+  .day-picker{display:flex;gap:8px;overflow-x:auto;padding:2px 20px 14px;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+  .day-picker::-webkit-scrollbar{display:none;}
+  .day-chip{flex:0 0 auto;width:42px;height:54px;border-radius:12px;border:1px solid var(--line);background:var(--paper);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-family:'Work Sans',sans-serif;padding:0;}
+  .day-chip .wd{font-size:10px;color:var(--ink-soft);}
+  .day-chip .dn{font-size:15px;font-weight:600;color:var(--ink);}
+  .day-chip .dot{width:4px;height:4px;border-radius:50%;background:var(--rust);}
+  .day-chip.today{border-color:var(--rust);border-width:1.5px;}
+  .day-chip.active{background:var(--ink);border-color:var(--ink);}
+  .day-chip.active .wd{color:#D8CBBA;}
+  .day-chip.active .dn{color:#fff;}
+  .day-chip.active .dot{background:#fff;}
+  .day-summary{margin:0 20px 10px;font-size:12.5px;color:var(--ink-soft);}
+  .day-summary b{color:var(--ink);}
   .tx-date-group{margin-bottom:14px;}
-  .tx-date-label{font-size:11.5px;color:var(--ink-soft);margin:0 4px 6px;letter-spacing:.02em;}
+  .tx-date-label{font-size:11.5px;color:var(--ink-soft);margin:0 4px 6px;letter-spacing:.02em;display:flex;justify-content:space-between;align-items:baseline;}
+  .tx-date-label .day-sum{font-size:11.5px;}
+  .tx-date-label .day-sum b{font-weight:600;}
   .tx{display:flex;align-items:center;gap:10px;background:var(--paper);border:1px solid var(--line);border-radius:12px;padding:11px 13px;margin-bottom:6px;cursor:pointer;}
   .tx .tag{width:40px;height:26px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:600;font-family:'Work Sans',sans-serif;letter-spacing:-0.02em;}
   .tx .tag.expense{background:var(--rust-tint);color:var(--rust-dark);}
@@ -220,11 +235,11 @@
 
         <div id="paymentSection">
           <div class="who-toggle" id="paymentToggle">
-            <button data-payment="cash" class="active" type="button">현금</button>
-            <button data-payment="card" type="button">카드</button>
+            <button data-payment="card" class="active" type="button">카드</button>
+            <button data-payment="cash" type="button">현금</button>
           </div>
 
-          <div id="cardSection" style="display:none;">
+          <div id="cardSection">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <label style="margin-bottom:6px;">카드</label>
               <button type="button" id="cardEditToggle" class="edit-toggle">편집</button>
@@ -290,6 +305,7 @@
       </div>
 
       <div class="section-title">내역</div>
+      <div class="day-picker" id="dayPicker"></div>
       <div id="txContainer"></div>
     </div>
 
@@ -399,15 +415,16 @@ let currentMonthTab = 'input';
 let selectedWho = '공용';
 let selectedType = 'expense';
 let selectedMajor = CATS.expense[0].major;
-let selectedCat = CATS.expense[0].subs[0];
+let selectedCat = null;
 let majorEditMode = false;
 let subEditMode = false;
 let CARDS = [];
-let selectedPayment = 'cash';
+let selectedPayment = 'card';
 let selectedCard = null;
 let isInstallment = false;
 let cardEditMode = false;
 let editingId = null;
+let selectedDay = null;
 let yearStatFilter = 'expense';
 
 const $ = (id) => document.getElementById(id);
@@ -602,10 +619,10 @@ async function loadCategories(){
     // 지금 선택된 대분류/소분류가 삭제/변경됐을 수 있으니 안전하게 보정
     if(!CATS[selectedType].some(m=>m.major===selectedMajor)){
       selectedMajor = CATS[selectedType][0].major;
-      selectedCat = CATS[selectedType][0].subs[0];
-    } else {
+      selectedCat = null;
+    } else if(selectedCat){
       const m = CATS[selectedType].find(m=>m.major===selectedMajor);
-      if(!m.subs.includes(selectedCat)) selectedCat = m.subs[0];
+      if(!m.subs.includes(selectedCat)) selectedCat = null;
     }
   }catch(e){ /* DB 연결 실패 시 기본 카테고리로 계속 사용 */ }
 }
@@ -707,7 +724,7 @@ async function submitMajorDelete(name){
   await deleteCategoryMajor(selectedType, name);
   if(selectedMajor===name){
     selectedMajor = CATS[selectedType][0].major;
-    selectedCat = CATS[selectedType][0].subs[0];
+    selectedCat = null;
   }
   closeMajorAdd();
   buildChips();
@@ -791,7 +808,7 @@ function buildMajorChips(){
     b.onclick = ()=>{
       if(majorEditMode){ openMajorEdit(m.major); return; }
       selectedMajor = m.major;
-      selectedCat = m.subs[0];
+      selectedCat = null;
       closeMajorAdd();
       closeSubAdd();
       buildMajorChips();
@@ -859,7 +876,7 @@ $('typeToggle').addEventListener('click',(e)=>{
   selectedType = btn.dataset.type;
   document.querySelectorAll('#typeToggle button').forEach(b=>b.classList.toggle('active', b===btn));
   selectedMajor = CATS[selectedType][0].major;
-  selectedCat = CATS[selectedType][0].subs[0];
+  selectedCat = null;
   majorEditMode = false;
   subEditMode = false;
   $('majorEditToggle').textContent = '편집';
@@ -872,6 +889,7 @@ $('typeToggle').addEventListener('click',(e)=>{
   $('saveBtn').dataset.type = selectedType;
   $('saveBtn').textContent = editingId ? '수정 저장' : (selectedType==='expense' ? '지출 저장하기' : '수입 저장하기');
   $('paymentSection').style.display = selectedType==='expense' ? '' : 'none';
+  $('cardSection').style.display = (selectedType==='expense' && selectedPayment==='card') ? '' : 'none';
 });
 
 $('paymentToggle').addEventListener('click',(e)=>{
@@ -884,7 +902,6 @@ $('paymentToggle').addEventListener('click',(e)=>{
     document.querySelectorAll('#installmentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.installment==='false'));
     $('installmentMonthsRow').style.display = 'none';
   } else {
-    if(!selectedCard && CARDS[0]) selectedCard = CARDS[0].name;
     buildCardChips();
   }
 });
@@ -974,11 +991,13 @@ function cancelEdit(){
   $('amountInput').value = '';
   $('memoInput').value = '';
   $('installmentMonthsInput').value = '';
-  selectedPayment = 'cash';
+  selectedPayment = 'card';
+  selectedCard = null;
   isInstallment = false;
-  document.querySelectorAll('#paymentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.payment==='cash'));
+  document.querySelectorAll('#paymentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.payment==='card'));
   document.querySelectorAll('#installmentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.installment==='false'));
-  $('cardSection').style.display = 'none';
+  buildCardChips();
+  $('cardSection').style.display = selectedType==='expense' ? '' : 'none';
   $('installmentMonthsRow').style.display = 'none';
   $('saveBtn').textContent = selectedType==='expense' ? '지출 저장하기' : '수입 저장하기';
 }
@@ -989,6 +1008,7 @@ $('saveBtn').addEventListener('click', async ()=>{
   const raw = $('amountInput').value.replace(/[^0-9]/g,'');
   const amount = Number(raw);
   if(!amount){ toast('금액을 입력해 주세요'); return; }
+  if(!selectedCat){ toast('소분류를 선택해 주세요'); return; }
   const date = $('dateInput').value || new Date().toISOString().slice(0,10);
   const memo = $('memoInput').value.trim();
 
@@ -1013,6 +1033,7 @@ $('saveBtn').addEventListener('click', async ()=>{
     };
     if(idx>-1) transactions[idx] = entry;
     await updateTx(entry);
+    selectedDay = date;
     toast('수정했어요');
     cancelEdit();
     render();
@@ -1027,15 +1048,20 @@ $('saveBtn').addEventListener('click', async ()=>{
   };
   transactions.push(entry);
   await insertTx(entry);
+  selectedDay = date;
 
   $('amountInput').value = '';
   $('memoInput').value = '';
   $('installmentMonthsInput').value = '';
-  selectedPayment = 'cash';
+  selectedPayment = 'card';
+  selectedCard = null;
   isInstallment = false;
-  document.querySelectorAll('#paymentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.payment==='cash'));
+  selectedCat = null;
+  buildSubChips();
+  document.querySelectorAll('#paymentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.payment==='card'));
   document.querySelectorAll('#installmentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.installment==='false'));
-  $('cardSection').style.display = 'none';
+  buildCardChips();
+  $('cardSection').style.display = selectedType==='expense' ? '' : 'none';
   $('installmentMonthsRow').style.display = 'none';
   toast('저장했어요');
   render();
@@ -1066,8 +1092,8 @@ $('monthSubTabToggle').addEventListener('click',(e)=>{
   $('monthInstallmentTab').style.display = currentMonthTab==='installment' ? '' : 'none';
 });
 
-$('prevMonth').addEventListener('click',()=>{ currentMonth.setMonth(currentMonth.getMonth()-1); render(); });
-$('nextMonth').addEventListener('click',()=>{ currentMonth.setMonth(currentMonth.getMonth()+1); render(); });
+$('prevMonth').addEventListener('click',()=>{ currentMonth.setMonth(currentMonth.getMonth()-1); selectedDay = null; render(); });
+$('nextMonth').addEventListener('click',()=>{ currentMonth.setMonth(currentMonth.getMonth()+1); selectedDay = null; render(); });
 $('prevYear').addEventListener('click',()=>{ currentYear--; render(); });
 $('nextYear').addEventListener('click',()=>{ currentYear++; render(); });
 
@@ -1278,42 +1304,106 @@ function renderMonth(){
   $('cardBars').innerHTML = cardBarsHTML(expenseTx);
   $('catBars').innerHTML = catBarsHTML(incomeTx, 'income');
 
+  ensureSelectedDay(mk, monthTx);
+  buildDayPicker(mk, monthTx);
+  renderDayTx(monthTx);
+}
+
+function daysInMonth(date){
+  return new Date(date.getFullYear(), date.getMonth()+1, 0).getDate();
+}
+
+function ensureSelectedDay(mk, monthTx){
+  if(selectedDay && selectedDay.slice(0,7)===mk) return;
+  const todayStr = new Date().toISOString().slice(0,10);
+  if(todayStr.slice(0,7)===mk){
+    selectedDay = todayStr;
+    return;
+  }
+  if(monthTx.length){
+    selectedDay = monthTx.map(t=>t.date).sort().reverse()[0];
+  } else {
+    selectedDay = mk+'-01';
+  }
+}
+
+function buildDayPicker(mk, monthTx){
+  const wrap = $('dayPicker');
+  const dim = daysInMonth(currentMonth);
+  const todayStr = new Date().toISOString().slice(0,10);
+  const datesWithTx = new Set(monthTx.map(t=>t.date));
+
+  let html = '';
+  for(let day=1; day<=dim; day++){
+    const dateStr = mk+'-'+String(day).padStart(2,'0');
+    const d = new Date(dateStr+'T00:00:00');
+    const wd = ['일','월','화','수','목','금','토'][d.getDay()];
+    const isActive = dateStr===selectedDay;
+    const isToday = dateStr===todayStr;
+    html += `<button type="button" class="day-chip${isActive?' active':''}${isToday?' today':''}" data-date="${dateStr}">
+      <span class="wd">${wd}</span><span class="dn">${day}</span>${datesWithTx.has(dateStr)?'<span class="dot"></span>':''}
+    </button>`;
+  }
+  wrap.innerHTML = html;
+  wrap.querySelectorAll('.day-chip').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      selectedDay = chip.dataset.date;
+      buildDayPicker(mk, monthTx);
+      renderDayTx(transactions.filter(t=>t.date && t.date.slice(0,7)===mk));
+    });
+  });
+  const activeChip = wrap.querySelector('.day-chip.active');
+  if(activeChip) activeChip.scrollIntoView({ inline:'center', block:'nearest' });
+}
+
+function renderDayTx(monthTx){
   const container = $('txContainer');
   if(monthTx.length===0){
     container.innerHTML = '<div class="empty">이 달 내역이 아직 없어요.<br>위에서 첫 내역을 추가해 보세요.</div>';
     return;
   }
-  const groups = {};
-  monthTx.forEach(t=>{ (groups[t.date]=groups[t.date]||[]).push(t); });
+  const dayTx = monthTx.filter(t=>t.date===selectedDay)
+    .sort((a,b)=> b.createdAt-a.createdAt);
 
-  container.innerHTML = '<div class="tx-list">' + Object.keys(groups).sort().reverse().map(date=>{
-    const d = new Date(date+'T00:00:00');
-    const label = (d.getMonth()+1)+'월 '+d.getDate()+'일 ('+['일','월','화','수','목','금','토'][d.getDay()]+')';
-    const rows = groups[date].map(t=>{
-      const typeLabel = t.type==='income' ? '수입' : '지출';
-      const sign = t.type==='income' ? '+' : '-';
-      const payBits = [];
-      if(t.cardName) payBits.push(t.cardName);
-      else if(t.paymentMethod==='cash') payBits.push('현금');
-      if(t.installment && t.installmentMonths) payBits.push('할부 '+t.installmentMonths+'개월');
-      const payLine = payBits.length ? `<div class="memo">${payBits.join(' · ')}</div>` : '';
-      return `
-      <div class="tx" data-edit-id="${t.id}">
-        <div class="tag ${t.type}">${typeLabel}</div>
-        <div class="mid">
-          <div class="cat">${t.category}</div>
-          <div class="memo">${t.memo ? t.memo : '&nbsp;'}</div>
-          ${payLine}
-        </div>
-        <div class="right">
-          <div class="amt ${t.type}">${sign}${fmt(t.amount)}</div>
-          <div class="who">${t.who}</div>
-        </div>
-        <button class="del" data-id="${t.id}" aria-label="삭제">×</button>
-      </div>`;
-    }).join('');
-    return `<div class="tx-date-group"><div class="tx-date-label">${label}</div>${rows}</div>`;
-  }).join('') + '</div>';
+  const d = new Date(selectedDay+'T00:00:00');
+  const label = (d.getMonth()+1)+'월 '+d.getDate()+'일 ('+['일','월','화','수','목','금','토'][d.getDay()]+')';
+  const dayExpense = dayTx.filter(t=>t.type==='expense').reduce((s,t)=>s+t.amount,0);
+  const dayIncome = dayTx.filter(t=>t.type==='income').reduce((s,t)=>s+t.amount,0);
+  const daySumBits = [];
+  if(dayExpense>0) daySumBits.push(`지출 <b style="color:var(--rust-dark);">${fmt(dayExpense)}</b>`);
+  if(dayIncome>0) daySumBits.push(`수입 <b style="color:var(--sage-dark);">${fmt(dayIncome)}</b>`);
+  const summaryHTML = `<div class="day-summary"><span>${label}</span>${daySumBits.length ? ' · '+daySumBits.join(' · ') : ''}</div>`;
+
+  if(dayTx.length===0){
+    container.innerHTML = summaryHTML + '<div class="empty">이 날에는 내역이 없어요.</div>';
+    return;
+  }
+
+  const rows = dayTx.map(t=>{
+    const typeLabel = t.type==='income' ? '수입' : '지출';
+    const sign = t.type==='income' ? '+' : '-';
+    const payBits = [];
+    if(t.cardName) payBits.push(t.cardName);
+    else if(t.paymentMethod==='cash') payBits.push('현금');
+    if(t.installment && t.installmentMonths) payBits.push('할부 '+t.installmentMonths+'개월');
+    const payLine = payBits.length ? `<div class="memo">${payBits.join(' · ')}</div>` : '';
+    return `
+    <div class="tx" data-edit-id="${t.id}">
+      <div class="tag ${t.type}">${typeLabel}</div>
+      <div class="mid">
+        <div class="cat">${t.category}</div>
+        <div class="memo">${t.memo ? t.memo : '&nbsp;'}</div>
+        ${payLine}
+      </div>
+      <div class="right">
+        <div class="amt ${t.type}">${sign}${fmt(t.amount)}</div>
+        <div class="who">${t.who}</div>
+      </div>
+      <button class="del" data-id="${t.id}" aria-label="삭제">×</button>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = summaryHTML + '<div class="tx-list">' + rows + '</div>';
 
   container.querySelectorAll('.del').forEach(btn=>{
     btn.addEventListener('click', (e)=>{ e.stopPropagation(); deleteTx(btn.dataset.id); });

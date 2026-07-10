@@ -258,6 +258,13 @@
           </div>
         </div>
 
+        <div id="fixedSection" style="margin-bottom:16px;">
+          <div class="who-toggle" id="fixedToggle">
+            <button data-fixed="false" class="active" type="button">일반 지출</button>
+            <button data-fixed="true" type="button">고정 지출</button>
+          </div>
+        </div>
+
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <label style="margin-bottom:6px;">대분류</label>
           <button type="button" id="majorEditToggle" class="edit-toggle">편집</button>
@@ -322,6 +329,10 @@
       </div>
       <div class="card" id="budgetSummary"></div>
       <div class="budget-list" id="budgetList"></div>
+
+      <div class="section-title" style="margin-bottom:6px;">이번 달 고정 지출</div>
+      <div class="card" id="fixedSummary"></div>
+      <div class="budget-list" id="fixedList"></div>
 
       <div class="section-title" style="margin-bottom:10px;">이번 달 카드별 지출</div>
       <div class="cat-bars" id="cardBars"></div>
@@ -427,6 +438,7 @@ let CARDS = [];
 let selectedPayment = 'card';
 let selectedCard = null;
 let isInstallment = false;
+let isFixed = false;
 let cardEditMode = false;
 let editingId = null;
 let selectedDay = null;
@@ -444,7 +456,8 @@ async function loadData(){
       id:t.id, type:t.type||'expense', date:t.date, amount:t.amount,
       category:t.category, who:t.who, memo:t.memo||'', createdAt:t.created_at,
       paymentMethod:t.payment_method||null, cardName:t.card_name||null,
-      installment: !!t.installment, installmentMonths: t.installment_months||null
+      installment: !!t.installment, installmentMonths: t.installment_months||null,
+      isFixed: !!t.is_fixed
     }));
   }catch(e){
     toast('데이터를 불러오지 못했어요. 설정을 확인해 주세요.');
@@ -459,7 +472,8 @@ async function insertTx(entry){
       id:entry.id, type:entry.type, date:entry.date, amount:entry.amount,
       category:entry.category, who:entry.who, memo:entry.memo, created_at:entry.createdAt,
       payment_method:entry.paymentMethod||null, card_name:entry.cardName||null,
-      installment: !!entry.installment, installment_months: entry.installmentMonths||null
+      installment: !!entry.installment, installment_months: entry.installmentMonths||null,
+      is_fixed: !!entry.isFixed
     });
     if(error) throw error;
   }catch(e){ toast('저장에 실패했어요. 다시 시도해 주세요.'); }
@@ -471,7 +485,8 @@ async function updateTx(entry){
       type:entry.type, date:entry.date, amount:entry.amount,
       category:entry.category, who:entry.who, memo:entry.memo,
       payment_method:entry.paymentMethod||null, card_name:entry.cardName||null,
-      installment: !!entry.installment, installment_months: entry.installmentMonths||null
+      installment: !!entry.installment, installment_months: entry.installmentMonths||null,
+      is_fixed: !!entry.isFixed
     }).eq('id', entry.id);
     if(error) throw error;
   }catch(e){ toast('수정에 실패했어요. 다시 시도해 주세요.'); }
@@ -895,6 +910,7 @@ $('typeToggle').addEventListener('click',(e)=>{
   $('saveBtn').textContent = editingId ? '수정 저장' : (selectedType==='expense' ? '지출 저장하기' : '수입 저장하기');
   $('paymentSection').style.display = selectedType==='expense' ? '' : 'none';
   $('cardSection').style.display = (selectedType==='expense' && selectedPayment==='card') ? '' : 'none';
+  $('fixedSection').style.display = selectedType==='expense' ? '' : 'none';
 });
 
 $('paymentToggle').addEventListener('click',(e)=>{
@@ -930,6 +946,12 @@ $('installmentMonthsInput').addEventListener('input', (e)=>{
   e.target.value = e.target.value.replace(/[^0-9]/g,'');
 });
 
+$('fixedToggle').addEventListener('click',(e)=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  isFixed = btn.dataset.fixed === 'true';
+  document.querySelectorAll('#fixedToggle button').forEach(b=>b.classList.toggle('active', b===btn));
+});
+
 $('whoToggle').addEventListener('click',(e)=>{
   const btn = e.target.closest('button'); if(!btn) return;
   selectedWho = btn.dataset.who;
@@ -949,6 +971,7 @@ function startEditTx(t){
   selectedType = t.type;
   document.querySelectorAll('#typeToggle button').forEach(b=>b.classList.toggle('active', b.dataset.type===t.type));
   $('paymentSection').style.display = t.type==='expense' ? '' : 'none';
+  $('fixedSection').style.display = t.type==='expense' ? '' : 'none';
 
   selectedWho = t.who;
   document.querySelectorAll('#whoToggle button').forEach(b=>b.classList.toggle('active', b.dataset.who===t.who));
@@ -983,6 +1006,8 @@ function startEditTx(t){
       $('installmentMonthsRow').style.display = isInstallment ? '' : 'none';
       $('installmentMonthsInput').value = t.installmentMonths || '';
     }
+    isFixed = !!t.isFixed;
+    document.querySelectorAll('#fixedToggle button').forEach(b=>b.classList.toggle('active', (b.dataset.fixed==='true')===isFixed));
   }
 
   $('saveBtn').textContent = '수정 저장';
@@ -999,8 +1024,10 @@ function cancelEdit(){
   selectedPayment = 'card';
   selectedCard = null;
   isInstallment = false;
+  isFixed = false;
   document.querySelectorAll('#paymentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.payment==='card'));
   document.querySelectorAll('#installmentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.installment==='false'));
+  document.querySelectorAll('#fixedToggle button').forEach(b=>b.classList.toggle('active', b.dataset.fixed==='false'));
   buildCardChips();
   $('cardSection').style.display = selectedType==='expense' ? '' : 'none';
   $('installmentMonthsRow').style.display = 'none';
@@ -1027,6 +1054,7 @@ $('saveBtn').addEventListener('click', async ()=>{
     if(!installmentMonthsVal || installmentMonthsVal < 2){ toast('할부 개월 수를 입력해 주세요 (2개월 이상)'); return; }
   }
   if(isExpense && selectedPayment==='card' && !cardName){ toast('카드를 선택해 주세요'); return; }
+  const fixedOn = isExpense && isFixed;
 
   if(editingId){
     const idx = transactions.findIndex(t=>t.id===editingId);
@@ -1034,6 +1062,7 @@ $('saveBtn').addEventListener('click', async ()=>{
       id: editingId,
       type: selectedType, date, amount, category: selectedCat, who: selectedWho, memo,
       paymentMethod, cardName, installment: installmentOn, installmentMonths: installmentMonthsVal,
+      isFixed: fixedOn,
       createdAt: idx>-1 ? transactions[idx].createdAt : Date.now()
     };
     if(idx>-1) transactions[idx] = entry;
@@ -1049,6 +1078,7 @@ $('saveBtn').addEventListener('click', async ()=>{
     id: Date.now().toString(36)+Math.random().toString(36).slice(2,6),
     type: selectedType, date, amount, category: selectedCat, who: selectedWho, memo,
     paymentMethod, cardName, installment: installmentOn, installmentMonths: installmentMonthsVal,
+    isFixed: fixedOn,
     createdAt: Date.now()
   };
   transactions.push(entry);
@@ -1061,10 +1091,12 @@ $('saveBtn').addEventListener('click', async ()=>{
   selectedPayment = 'card';
   selectedCard = null;
   isInstallment = false;
+  isFixed = false;
   selectedCat = null;
   buildSubChips();
   document.querySelectorAll('#paymentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.payment==='card'));
   document.querySelectorAll('#installmentToggle button').forEach(b=>b.classList.toggle('active', b.dataset.installment==='false'));
+  document.querySelectorAll('#fixedToggle button').forEach(b=>b.classList.toggle('active', b.dataset.fixed==='false'));
   buildCardChips();
   $('cardSection').style.display = selectedType==='expense' ? '' : 'none';
   $('installmentMonthsRow').style.display = 'none';
@@ -1199,6 +1231,39 @@ function renderInstallments(mk){
     </div>`;
 }
 
+function renderFixedSection(expenseTx){
+  const summaryEl = $('fixedSummary');
+  const listEl = $('fixedList');
+  if(!summaryEl || !listEl) return;
+
+  const fixedTx = expenseTx.filter(t=>t.isFixed).sort((a,b)=> b.amount-a.amount);
+
+  if(fixedTx.length===0){
+    listEl.innerHTML = '<div class="empty">이 달에 등록된 고정 지출이 없어요.</div>';
+    summaryEl.innerHTML = `<div style="font-size:12.5px;color:var(--ink-soft);">입력할 때 "고정 지출"을 선택하면 여기 모아서 보여드려요.</div>`;
+    return;
+  }
+
+  const total = fixedTx.reduce((s,t)=>s+t.amount,0);
+  const rows = fixedTx.map(t=>{
+    const payBit = t.cardName ? t.cardName : (t.paymentMethod==='cash' ? '현금' : '');
+    return `
+      <div class="budget-row">
+        <div class="b-top">
+          <div class="b-major">${t.category}${t.memo ? ' · '+t.memo : ''}</div>
+          <div style="font-size:13px;font-weight:600;flex-shrink:0;">${fmt(t.amount)}</div>
+        </div>
+        ${payBit ? `<div class="b-nums">${payBit}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  listEl.innerHTML = rows;
+  summaryEl.innerHTML = `<div style="display:flex;justify-content:space-between;font-size:13px;">
+      <div><div style="color:var(--ink-soft);font-size:11px;">고정 지출 항목</div><div style="font-weight:600;">${fixedTx.length}건</div></div>
+      <div><div style="color:var(--ink-soft);font-size:11px;">이번 달 합계</div><div style="font-weight:600;">${fmt(total)}</div></div>
+    </div>`;
+}
+
 function renderBudgetSection(mk, expenseTx){
   const spent = spentByMajor(expenseTx);
   const monthBudgets = budgets.filter(b=>b.month===mk);
@@ -1308,6 +1373,7 @@ function renderMonth(){
 
   renderBudgetSection(mk, expenseTx);
   renderInstallments(mk);
+  renderFixedSection(expenseTx);
 
   $('cardBars').innerHTML = cardBarsHTML(expenseTx);
   $('catBars').innerHTML = catBarsHTML(incomeTx, 'income');
@@ -1412,6 +1478,7 @@ function renderDayTx(monthTx){
     if(t.cardName) payBits.push(t.cardName);
     else if(t.paymentMethod==='cash') payBits.push('현금');
     if(t.installment && t.installmentMonths) payBits.push('할부 '+t.installmentMonths+'개월');
+    if(t.isFixed) payBits.push('고정 지출');
     const payLine = payBits.length ? `<div class="memo">${payBits.join(' · ')}</div>` : '';
     return `
     <div class="tx" data-edit-id="${t.id}">
